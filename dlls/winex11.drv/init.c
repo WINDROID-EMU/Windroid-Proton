@@ -68,6 +68,13 @@ static void device_init(void)
     /* Initialize XRender */
     xrender_funcs = X11DRV_XRender_Init();
 
+    /* Android/Bionic fix: Ensure default_visual.depth is valid */
+    if (default_visual.depth == 0)
+    {
+        WARN("default_visual.depth is 0, forcing to 24\n");
+        default_visual.depth = 24;
+    }
+
     /* Init Xcursor */
     X11DRV_Xcursor_Init();
 

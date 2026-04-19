@@ -116,6 +116,9 @@ HBITMAP WINAPI NtGdiCreateBitmap( INT width, INT height, UINT planes,
     if (width < 0)
         width = -width;
 
+    /* Android/Bionic fix: Treat planes=0 as planes=1 for compatibility */
+    if (planes == 0) planes = 1;
+
     if (planes != 1)
     {
         FIXME("planes = %d\n", planes);

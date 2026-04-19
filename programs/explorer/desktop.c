@@ -1120,9 +1120,16 @@ static void initialize_display_settings( unsigned int width, unsigned int height
             .dmPelsHeight = height,
         };
 
-        /* in virtual desktop mode, set the primary display settings to match desktop size */
-        if (ChangeDisplaySettingsExW( NULL, &devmode, 0, flags, NULL ))
-            ERR( "Failed to set primary display settings.\n" );
+        /* In virtual desktop mode, set the primary display settings to match desktop size */
+        LONG result = ChangeDisplaySettingsExW( NULL, &devmode, 0, flags, NULL );
+        if (result != DISP_CHANGE_SUCCESSFUL)
+        {
+            WARN( "Failed to set primary display settings (result=%ld), trying fallback.\n", result );
+            /* Try with fewer flags as fallback for limited drivers */
+            result = ChangeDisplaySettingsExW( NULL, &devmode, 0, CDS_NORESET, NULL );
+            if (result != DISP_CHANGE_SUCCESSFUL)
+                WARN( "All attempts to set display settings failed, desktop may have wrong size.\n" );
+        }
     }
 
     thread = CreateThread( NULL, 0, display_settings_restorer_thread, NULL, 0, NULL );

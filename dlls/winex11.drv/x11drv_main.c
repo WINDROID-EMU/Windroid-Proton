@@ -735,6 +735,13 @@ static NTSTATUS x11drv_init( void *arg )
     init_visuals( display, DefaultScreen( display ));
     screen_bpp = pixmap_formats[default_visual.depth]->bits_per_pixel;
 
+    /* Android/Bionic fix: Ensure valid screen_bpp */
+    if (screen_bpp == 0)
+    {
+        WARN("screen_bpp is 0, forcing to 32\n");
+        screen_bpp = 32;
+    }
+
     XInternAtoms( display, (char **)atom_names, NB_XATOMS - FIRST_XATOM, False, X11DRV_Atoms );
 
     init_win_context();
