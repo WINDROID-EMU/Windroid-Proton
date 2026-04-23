@@ -1645,10 +1645,11 @@ static UINT window_update_client_config( struct x11drv_win_data *data )
 /***********************************************************************
  *      GetWindowStateUpdates   (X11DRV.@)
  */
-BOOL X11DRV_GetWindowStateUpdates( HWND hwnd, UINT *state_cmd, UINT *config_cmd, RECT *rect )
+BOOL X11DRV_GetWindowStateUpdates( HWND hwnd, UINT *state_cmd, UINT *config_cmd, RECT *rect, HWND *foreground )
 {
     struct x11drv_win_data *data;
 
+    *foreground = 0;
     if (!(data = get_win_data( hwnd ))) return FALSE;
 
     *state_cmd = window_update_client_state( data );
