@@ -296,12 +296,12 @@ void restore_clipping_region( X11DRV_PDEVICE *dev )
 /***********************************************************************
  *           X11DRV_SetDeviceClipping
  */
-void X11DRV_SetDeviceClipping( PHYSDEV dev, HRGN rgn, HRGN monitor_rgn )
+void X11DRV_SetDeviceClipping( PHYSDEV dev, HRGN rgn )
 {
     X11DRV_PDEVICE *physDev = get_x11drv_dev( dev );
 
-    physDev->region = monitor_rgn;
-    update_x11_clipping( physDev, monitor_rgn );
+    physDev->region = rgn;
+    update_x11_clipping( physDev, rgn );
 }
 
 

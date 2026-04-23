@@ -31,9 +31,33 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(x11drv);
 
+float get_fsr_ratio(void)
+{
+    static float ratio = 0.0f;
+    const char *env;
+    const char *mode;
+    int fsr_mode;
+    
+    if (ratio != 0.0f) return ratio;
+    
+    ratio = 1.0f;
+    env = getenv("WINE_FULLSCREEN_FSR");
+    if (env && atoi(env) > 0)
+    {
+        mode = getenv("WINE_FULLSCREEN_FSR_MODE");
+        fsr_mode = mode ? atoi(mode) : 0;
+        switch(fsr_mode) {
+            case 1: ratio = 1.3f; break; /* Ultra Quality */
+            case 2: ratio = 1.5f; break; /* Quality */
+            case 3: ratio = 1.7f; break; /* Balanced */
+            case 4: ratio = 2.0f; break; /* Performance */
+        }
+    }
+    return ratio;
+}
+
 static struct x11drv_display_device_handler host_handler;
 static struct x11drv_settings_handler settings_handler;
-RECT gamescope_screen_rect;
 
 #define NEXT_DEVMODEW(mode) ((DEVMODEW *)((char *)((mode) + 1) + (mode)->dmDriverExtra))
 
@@ -67,27 +91,38 @@ static BOOL nores_get_modes( x11drv_settings_id id, DWORD flags, DEVMODEW **new_
 {
     RECT primary = get_host_primary_monitor_rect();
     DEVMODEW *modes;
+    float ratio = get_fsr_ratio();
+    UINT count = (ratio > 1.0f) ? 2 : 1;
 
-    modes = calloc(1, sizeof(*modes));
+    modes = calloc(count, sizeof(*modes));
     if (!modes)
     {
         RtlSetLastWin32Error( ERROR_NOT_ENOUGH_MEMORY );
         return FALSE;
     }
 
+    /* Primary Native Mode */
     modes[0].dmSize = sizeof(*modes);
     modes[0].dmDriverExtra = 0;
     modes[0].dmFields = DM_DISPLAYORIENTATION | DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT |
                         DM_DISPLAYFLAGS | DM_DISPLAYFREQUENCY;
     modes[0].dmDisplayOrientation = DMDO_DEFAULT;
     modes[0].dmBitsPerPel = screen_bpp;
-    modes[0].dmPelsWidth = primary.right;
-    modes[0].dmPelsHeight = primary.bottom;
+    modes[0].dmPelsWidth = primary.right - primary.left;
+    modes[0].dmPelsHeight = primary.bottom - primary.top;
     modes[0].dmDisplayFlags = 0;
     modes[0].dmDisplayFrequency = 60;
 
+    /* FSR Scaled Mode (No black bars) */
+    if (count > 1)
+    {
+        modes[1] = modes[0];
+        modes[1].dmPelsWidth = (DWORD)(modes[0].dmPelsWidth / ratio);
+        modes[1].dmPelsHeight = (DWORD)(modes[0].dmPelsHeight / ratio);
+    }
+
     *new_modes = modes;
-    *mode_count = 1;
+    *mode_count = count;
     return TRUE;
 }
 
@@ -179,8 +214,11 @@ static DEVMODEW *get_full_mode(x11drv_settings_id id, DEVMODEW *dev_mode)
 
     for (mode_idx = 0; mode_idx < mode_count; ++mode_idx)
     {
-        found_mode = (DEVMODEW *)((BYTE *)modes + (sizeof(*modes) + modes[0].dmDriverExtra) * mode_idx);
-        if (is_same_devmode( found_mode, dev_mode )) break;
+        DEVMODEW *m = (DEVMODEW *)((BYTE *)modes + (sizeof(*modes) + modes[0].dmDriverExtra) * mode_idx);
+        if (is_same_devmode( m, dev_mode )) {
+            found_mode = m;
+            break;
+        }
     }
 
     if (!found_mode || mode_idx == mode_count)
@@ -324,67 +362,6 @@ RECT get_host_primary_monitor_rect(void)
     return rect;
 }
 
-/* Get an array of host monitor rectangles in X11 root coordinates. Free the array when it's done */
-BOOL get_host_monitor_rects( RECT **ret_rects, int *ret_count )
-{
-    int gpu_count, adapter_count, monitor_count, rect_count = 0;
-    int gpu_idx, adapter_idx, monitor_idx, rect_idx;
-    struct x11drv_gpu *gpus = NULL;
-    struct x11drv_adapter *adapters = NULL;
-    struct gdi_monitor *monitors = NULL;
-    RECT *rects = NULL, *new_rects;
-    POINT left_top = {INT_MAX, INT_MAX};
-
-    if (!host_handler.get_gpus( &gpus, &gpu_count, FALSE )) goto failed;
-
-    for (gpu_idx = 0; gpu_idx < gpu_count; gpu_idx++)
-    {
-        if (!host_handler.get_adapters( gpus[gpu_idx].id, &adapters, &adapter_count )) goto failed;
-
-        for (adapter_idx = 0; adapter_idx < adapter_count; adapter_idx++)
-        {
-            if (!host_handler.get_monitors( adapters[adapter_idx].id, &monitors, &monitor_count )) goto failed;
-
-            new_rects = realloc( rects, (rect_count + monitor_count) * sizeof(*rects) );
-            if (!new_rects) goto failed;
-            rects = new_rects;
-
-            for (monitor_idx = 0; monitor_idx < monitor_count; monitor_idx++)
-            {
-                rects[rect_count++] = monitors[monitor_idx].rc_monitor;
-                left_top.x = min( left_top.x, monitors[monitor_idx].rc_monitor.left );
-                left_top.y = min( left_top.y, monitors[monitor_idx].rc_monitor.top );
-            }
-
-            host_handler.free_monitors( monitors, monitor_count );
-            monitors = NULL;
-        }
-
-        host_handler.free_adapters( adapters );
-        adapters = NULL;
-    }
-
-    host_handler.free_gpus( gpus, gpu_count );
-    gpus = NULL;
-
-    /* Convert from win32 virtual screen coordinates to X11 root coordinates */
-    for (rect_idx = 0; rect_idx < rect_count; rect_idx++)
-        OffsetRect( &rects[rect_idx], -left_top.x, -left_top.y );
-
-    *ret_rects = rects;
-    *ret_count = rect_count;
-    return TRUE;
-
-failed:
-    if (monitors) host_handler.free_monitors( monitors, monitor_count );
-    if (adapters) host_handler.free_adapters( adapters );
-    if (gpus) host_handler.free_gpus( gpus, gpu_count );
-    free( rects );
-    *ret_rects = NULL;
-    *ret_count = 0;
-    return FALSE;
-}
-
 RECT get_work_area(const RECT *monitor_rect)
 {
     Atom type;
@@ -496,6 +473,8 @@ UINT X11DRV_UpdateDisplayDevices( const struct gdi_device_manager *device_manage
             x11drv_settings_id settings_id;
             BOOL is_primary = adapters[adapter].state_flags & DISPLAY_DEVICE_PRIMARY_DEVICE;
             UINT dpi = NtUserGetSystemDpiForProcess( NULL );
+            float ratio = get_fsr_ratio();
+            UINT i;
 
             sprintf( buffer, "%04lx", adapters[adapter].id );
             device_manager->add_source( buffer, adapters[adapter].state_flags, dpi, param );
@@ -515,15 +494,23 @@ UINT X11DRV_UpdateDisplayDevices( const struct gdi_device_manager *device_manage
             if (!settings_handler.get_id( devname, is_primary, &settings_id )) break;
 
             settings_handler.get_current_mode( settings_id, &current_mode );
-            if (!gpu && X11DRV_HasWindowManager( "steamcompmgr" ))
+            if (ratio > 1.0f)
             {
-                gamescope_screen_rect.left = gamescope_screen_rect.top = 0;
-                gamescope_screen_rect.right = current_mode.dmPelsWidth;
-                gamescope_screen_rect.bottom = current_mode.dmPelsHeight;
+                current_mode.dmPelsWidth = (DWORD)(current_mode.dmPelsWidth / ratio);
+                current_mode.dmPelsHeight = (DWORD)(current_mode.dmPelsHeight / ratio);
             }
 
             if (settings_handler.get_modes( settings_id, EDS_ROTATEDMODE, &modes, &mode_count, FALSE ))
             {
+                if (ratio > 1.0f)
+                {
+                    for (i = 0; i < mode_count; i++)
+                    {
+                        DEVMODEW *m = (DEVMODEW *)((BYTE *)modes + (sizeof(*modes) + modes[0].dmDriverExtra) * i);
+                        m->dmPelsWidth = (DWORD)(m->dmPelsWidth / ratio);
+                        m->dmPelsHeight = (DWORD)(m->dmPelsHeight / ratio);
+                    }
+                }
                 device_manager->add_modes( &current_mode, mode_count, modes, param );
                 settings_handler.free_modes( modes );
             }

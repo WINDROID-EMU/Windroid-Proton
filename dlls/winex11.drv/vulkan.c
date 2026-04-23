@@ -27,7 +27,6 @@
 #include "config.h"
 
 #include <stdarg.h>
-#include <stdlib.h>
 #include <stdio.h>
 #include <dlfcn.h>
 
@@ -71,7 +70,6 @@ struct x11drv_vulkan_surface
     BOOL offscreen;
     HDC hdc_src;
     HDC hdc_dst;
-    BOOL other_process;
 };
 
 static void vulkan_surface_destroy( HWND hwnd, struct x11drv_vulkan_surface *surface )
@@ -82,30 +80,6 @@ static void vulkan_surface_destroy( HWND hwnd, struct x11drv_vulkan_surface *sur
     free( surface );
 }
 
-static RECT get_client_rect( HWND hwnd, BOOL raw )
-{
-    UINT dpi = NtUserGetDpiForWindow( hwnd );
-    RECT rect;
-
-    NtUserGetClientRect( hwnd, &rect, dpi );
-    if (!raw) return rect;
-    rect = map_rect_virt_to_raw_for_monitor( NtUserMonitorFromWindow( hwnd, MONITOR_DEFAULTTONEAREST ), rect, dpi );
-    OffsetRect( &rect, -rect.left, -rect.top );
-    return rect;
-}
-
-static BOOL disable_opwr(void)
-{
-    static int disable = -1;
-
-    if (disable == -1)
-    {
-        const char *e = getenv( "WINE_DISABLE_VULKAN_OPWR" );
-        disable = e && atoi( e );
-    }
-    return disable;
-}
-
 static VkResult X11DRV_vulkan_surface_create( HWND hwnd, VkInstance instance, VkSurfaceKHR *handle, void **private )
 {
     VkXlibSurfaceCreateInfoKHR info =
@@ -114,8 +88,6 @@ static VkResult X11DRV_vulkan_surface_create( HWND hwnd, VkInstance instance, Vk
         .dpy = gdi_display,
     };
     struct x11drv_vulkan_surface *surface;
-    BOOL enable_fshack = enable_fullscreen_hack( hwnd, FALSE );
-    DWORD hwnd_pid, hwnd_thread_id;
 
     TRACE( "%p %p %p %p\n", hwnd, instance, handle, private );
 
@@ -124,47 +96,13 @@ static VkResult X11DRV_vulkan_surface_create( HWND hwnd, VkInstance instance, Vk
         ERR("Failed to allocate vulkan surface for hwnd=%p\n", hwnd);
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
-    surface->rect = get_client_rect( hwnd, enable_fshack );
-
-    hwnd_thread_id = NtUserGetWindowThread(hwnd, &hwnd_pid);
-    if (hwnd_thread_id && hwnd_pid != GetCurrentProcessId())
-    {
-        XSetWindowAttributes attr;
-        RECT rect = surface->rect;
-        unsigned int width, height;
-
-        WARN("Other process window %p.\n", hwnd);
-
-        if (disable_opwr() && hwnd != NtUserGetDesktopWindow())
-        {
-            ERR( "HACK: Failing surface creation for other process window %p.\n", hwnd );
-            free( surface );
-            return VK_ERROR_OUT_OF_HOST_MEMORY;
-        }
-
-        width = max( rect.right - rect.left, 1 );
-        height = max( rect.bottom - rect.top, 1 );
-        attr.colormap = default_colormap;
-        attr.bit_gravity = NorthWestGravity;
-        attr.win_gravity = NorthWestGravity;
-        attr.backing_store = NotUseful;
-        attr.border_pixel = 0;
-        surface->window = XCreateWindow( gdi_display, get_dummy_parent(), 0, 0, width, height, 0, default_visual.depth, InputOutput,
-                                         default_visual.visual, CWBitGravity | CWWinGravity | CWBackingStore | CWColormap | CWBorderPixel, &attr );
-        if (surface->window)
-        {
-            XMapWindow( gdi_display, surface->window );
-            XSync( gdi_display, False );
-            surface->other_process = TRUE;
-        }
-    }
-
-    if (!surface->window && !(surface->window = create_client_window( hwnd, surface->rect, &default_visual, default_colormap )))
+    if (!(surface->window = create_client_window( hwnd, &default_visual, default_colormap )))
     {
         ERR("Failed to allocate client window for hwnd=%p\n", hwnd);
         free( surface );
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
+    NtUserGetClientRect( hwnd, &surface->rect, NtUserGetDpiForWindow( hwnd ) );
 
     info.window = surface->window;
     if (pvkCreateXlibSurfaceKHR( instance, &info, NULL /* allocator */, handle ))
@@ -206,11 +144,10 @@ static void X11DRV_vulkan_surface_detach( HWND hwnd, void *private )
 
 static void vulkan_surface_update_size( HWND hwnd, struct x11drv_vulkan_surface *surface )
 {
-    BOOL enable_fshack = enable_fullscreen_hack( hwnd, FALSE );
     XWindowChanges changes;
     RECT rect;
 
-    rect = get_client_rect( hwnd, enable_fshack );
+    NtUserGetClientRect( hwnd, &rect, NtUserGetDpiForWindow( hwnd ) );
     if (EqualRect( &surface->rect, &rect )) return;
 
     changes.width  = min( max( 1, rect.right ), 65535 );
@@ -221,10 +158,9 @@ static void vulkan_surface_update_size( HWND hwnd, struct x11drv_vulkan_surface 
 
 static void vulkan_surface_update_offscreen( HWND hwnd, struct x11drv_vulkan_surface *surface )
 {
-    BOOL offscreen = needs_offscreen_rendering( hwnd, FALSE, FALSE );
+    BOOL offscreen = needs_offscreen_rendering( hwnd, FALSE );
     struct x11drv_win_data *data;
 
-    if (surface->other_process) offscreen = TRUE;
     if (offscreen == surface->offscreen)
     {
         if (!offscreen && (data = get_win_data( hwnd )))
@@ -282,66 +218,33 @@ static void X11DRV_vulkan_surface_update( HWND hwnd, void *private )
     vulkan_surface_update_offscreen( hwnd, surface );
 }
 
-static int force_present_to_surface(void)
-{
-    static int cached = -1;
-
-    if (cached == -1)
-    {
-        const char *sgi = getenv( "SteamGameId" );
-
-        cached = sgi &&
-                 (
-                    !strcmp(sgi, "803600")
-                 );
-    }
-    return cached;
-}
-
 static void X11DRV_vulkan_surface_presented( HWND hwnd, void *private, VkResult result )
 {
     struct x11drv_vulkan_surface *surface = private;
-    struct window_surface *win_surface;
+    HWND toplevel = NtUserGetAncestor( hwnd, GA_ROOT );
     struct x11drv_win_data *data;
     RECT rect_dst, rect;
     Drawable window;
-    HWND toplevel;
     HRGN region;
-    UINT dpi;
     HDC hdc;
 
     vulkan_surface_update_size( hwnd, surface );
     vulkan_surface_update_offscreen( hwnd, surface );
 
     if (!surface->offscreen) return;
+    if (!(hdc = NtUserGetDCEx( hwnd, 0, DCX_CACHE | DCX_USESTYLE ))) return;
+    window = X11DRV_get_whole_window( toplevel );
+    region = get_dc_monitor_region( hwnd, hdc );
 
-    if (force_present_to_surface() && (win_surface = window_surface_get( hwnd )))
-    {
-        TRACE("blitting to surface win_surface %p.\n", win_surface);
-        if (!(hdc = NtUserGetDCEx( hwnd, 0, DCX_CACHE | DCX_USESTYLE ))) return;
-        NtGdiStretchBlt( hdc, 0, 0, surface->rect.right - surface->rect.left, surface->rect.bottom - surface->rect.top,
-                         surface->hdc_src, 0, 0, surface->rect.right, surface->rect.bottom, SRCCOPY, 0 );
-        NtUserReleaseDC( hwnd, hdc );
-        window_surface_release( win_surface );
-        return;
-    }
+    NtUserGetClientRect( hwnd, &rect_dst, NtUserGetWinMonitorDpi( hwnd, MDT_RAW_DPI ) );
+    NtUserMapWindowPoints( hwnd, toplevel, (POINT *)&rect_dst, 2, NtUserGetWinMonitorDpi( hwnd, MDT_RAW_DPI ) );
 
-    toplevel = NtUserGetAncestor( hwnd, GA_ROOT );
-    dpi = NtUserGetDpiForWindow( hwnd );
-    NtUserGetClientRect( hwnd, &rect_dst, dpi );
-    NtUserMapWindowPoints( hwnd, toplevel, (POINT *)&rect_dst, 2, dpi );
-    if (IsRectEmpty( &rect_dst ) || IsRectEmpty( &surface->rect )) return;
-    rect_dst = map_rect_virt_to_raw_for_monitor( NtUserMonitorFromWindow( toplevel, MONITOR_DEFAULTTONEAREST ), rect_dst, dpi );
     if ((data = get_win_data( toplevel )))
     {
         OffsetRect( &rect_dst, data->rects.client.left - data->rects.visible.left,
                     data->rects.client.top - data->rects.visible.top );
         release_win_data( data );
     }
-
-    if (!(hdc = NtUserGetDCEx( hwnd, 0, DCX_CACHE | DCX_USESTYLE ))) return;
-    window = X11DRV_get_whole_window( toplevel );
-    region = get_dc_monitor_region( hwnd, hdc );
 
     if (get_dc_drawable( surface->hdc_dst, &rect ) != window || !EqualRect( &rect, &rect_dst ))
         set_dc_drawable( surface->hdc_dst, window, &rect_dst, IncludeInferiors );
@@ -352,11 +255,6 @@ static void X11DRV_vulkan_surface_presented( HWND hwnd, void *private, VkResult 
 
     if (region) NtGdiDeleteObjectApp( region );
     if (hdc) NtUserReleaseDC( hwnd, hdc );
-}
-
-static BOOL X11DRV_vulkan_surface_enable_fshack( HWND hwnd, void *private )
-{
-    return enable_fullscreen_hack( hwnd, FALSE );
 }
 
 static VkBool32 X11DRV_vkGetPhysicalDeviceWin32PresentationSupportKHR(VkPhysicalDevice phys_dev,
@@ -380,7 +278,6 @@ static const struct vulkan_driver_funcs x11drv_vulkan_driver_funcs =
     .p_vulkan_surface_detach = X11DRV_vulkan_surface_detach,
     .p_vulkan_surface_update = X11DRV_vulkan_surface_update,
     .p_vulkan_surface_presented = X11DRV_vulkan_surface_presented,
-    .p_vulkan_surface_enable_fshack = X11DRV_vulkan_surface_enable_fshack,
 
     .p_vkGetPhysicalDeviceWin32PresentationSupportKHR = X11DRV_vkGetPhysicalDeviceWin32PresentationSupportKHR,
     .p_get_host_surface_extension = X11DRV_get_host_surface_extension,

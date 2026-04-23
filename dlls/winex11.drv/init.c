@@ -68,13 +68,6 @@ static void device_init(void)
     /* Initialize XRender */
     xrender_funcs = X11DRV_XRender_Init();
 
-    /* Android/Bionic fix: Ensure default_visual.depth is valid */
-    if (default_visual.depth == 0)
-    {
-        WARN("default_visual.depth is 0, forcing to 24\n");
-        default_visual.depth = 24;
-    }
-
     /* Init Xcursor */
     X11DRV_Xcursor_Init();
 
@@ -224,43 +217,10 @@ static BOOL needs_client_window_clipping( HWND hwnd )
     return ret > 0;
 }
 
-BOOL needs_offscreen_rendering( HWND hwnd, BOOL known_child, BOOL check_gamma )
+BOOL needs_offscreen_rendering( HWND hwnd, BOOL known_child )
 {
-    static int no_child_clipping_cached = -1;
-    struct window_surface *surface;
-
-    UINT style = NtUserGetWindowLongW( hwnd, GWL_STYLE );
-    struct x11drv_win_data *data;
-    BOOL needs_offscreen;
-
-    if (no_child_clipping_cached == -1)
-    {
-        const char *sgi = getenv( "SteamGameId" );
-
-        no_child_clipping_cached = sgi && (!strcmp( sgi, "2229850" ) || !strcmp( sgi, "2229880" ));
-        if (no_child_clipping_cached) FIXME( "HACK: disabling child GL window clipping.\n" );
-    }
-
-    if (!(data = get_win_data( hwnd ))) needs_offscreen = TRUE; /* window is in a different process */
-    else
-    {
-        needs_offscreen = (style & WS_VISIBLE) && !(style & WS_MINIMIZE) && !is_window_rect_mapped( &data->rects.visible );
-        release_win_data( data );
-    }
-    if (!needs_offscreen && (surface = window_surface_get( hwnd )))
-    {
-        TRACE("hwnd %p, surface %p, surface->alpha_mask %#x.\n", hwnd, surface, surface->alpha_mask);
-        /* 3d drawing to ULW window never gets onscreen directly, only though UpdateLayeredWindow(). */
-        needs_offscreen = !!surface->alpha_mask;
-        window_surface_release( surface );
-    }
-    if (needs_offscreen) return needs_offscreen;
-
-    if (NtUserGetDpiForWindow( hwnd ) != NtUserGetWinMonitorDpi( hwnd, MDT_RAW_DPI )
-        && !enable_fullscreen_hack( hwnd, check_gamma ))
-        return TRUE; /* needs DPI scaling */
+    if (NtUserGetDpiForWindow( hwnd ) != NtUserGetWinMonitorDpi( hwnd, MDT_RAW_DPI )) return TRUE; /* needs DPI scaling */
     if (NtUserGetAncestor( hwnd, GA_PARENT ) != NtUserGetDesktopWindow()) return TRUE; /* child window, needs compositing */
-    if (no_child_clipping_cached) return FALSE;
     if (NtUserGetWindowRelative( hwnd, GW_CHILD ) || known_child) return needs_client_window_clipping( hwnd ); /* window has children, needs compositing */
     return FALSE;
 }
@@ -432,7 +392,7 @@ static const struct user_driver_funcs x11drv_funcs =
     .dc_funcs.pExtFloodFill = X11DRV_ExtFloodFill,
     .dc_funcs.pFillPath = X11DRV_FillPath,
     .dc_funcs.pGetDeviceCaps = X11DRV_GetDeviceCaps,
-    .dc_funcs.pGetDeviceGammaRamp = fs_hack_get_gamma_ramp,
+    .dc_funcs.pGetDeviceGammaRamp = X11DRV_GetDeviceGammaRamp,
     .dc_funcs.pGetICMProfile = X11DRV_GetICMProfile,
     .dc_funcs.pGetImage = X11DRV_GetImage,
     .dc_funcs.pGetNearestColor = X11DRV_GetNearestColor,
@@ -456,7 +416,7 @@ static const struct user_driver_funcs x11drv_funcs =
     .dc_funcs.pSetDCBrushColor = X11DRV_SetDCBrushColor,
     .dc_funcs.pSetDCPenColor = X11DRV_SetDCPenColor,
     .dc_funcs.pSetDeviceClipping = X11DRV_SetDeviceClipping,
-    .dc_funcs.pSetDeviceGammaRamp = fs_hack_set_gamma_ramp,
+    .dc_funcs.pSetDeviceGammaRamp = X11DRV_SetDeviceGammaRamp,
     .dc_funcs.pSetPixel = X11DRV_SetPixel,
     .dc_funcs.pStretchBlt = X11DRV_StretchBlt,
     .dc_funcs.pStrokeAndFillPath = X11DRV_StrokeAndFillPath,
@@ -474,6 +434,7 @@ static const struct user_driver_funcs x11drv_funcs =
     .pSetIMECompositionRect = X11DRV_SetIMECompositionRect,
     .pDestroyCursorIcon = X11DRV_DestroyCursorIcon,
     .pSetCursor = X11DRV_SetCursor,
+    .pGetCursorPos = X11DRV_GetCursorPos,
     .pSetCursorPos = X11DRV_SetCursorPos,
     .pClipCursor = X11DRV_ClipCursor,
     .pSystrayDockInit = X11DRV_SystrayDockInit,
@@ -487,14 +448,13 @@ static const struct user_driver_funcs x11drv_funcs =
     .pDesktopWindowProc = X11DRV_DesktopWindowProc,
     .pDestroyWindow = X11DRV_DestroyWindow,
     .pFlashWindowEx = X11DRV_FlashWindowEx,
-    .pHasWindowManager = X11DRV_HasWindowManager,
     .pGetDC = X11DRV_GetDC,
     .pProcessEvents = X11DRV_ProcessEvents,
     .pReleaseDC = X11DRV_ReleaseDC,
     .pScrollDC = X11DRV_ScrollDC,
     .pSetCapture = X11DRV_SetCapture,
     .pSetDesktopWindow = X11DRV_SetDesktopWindow,
-    .pActivateWindow = X11DRV_ActivateWindow,
+    .pSetFocus = X11DRV_SetFocus,
     .pSetLayeredWindowAttributes = X11DRV_SetLayeredWindowAttributes,
     .pSetParent = X11DRV_SetParent,
     .pSetWindowIcon = X11DRV_SetWindowIcon,
