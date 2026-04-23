@@ -271,6 +271,11 @@ static const char *X11DRV_get_host_surface_extension(void)
     return "VK_KHR_xlib_surface";
 }
 
+static BOOL X11DRV_vulkan_surface_enable_fshack( HWND hwnd, void *private )
+{
+    return FALSE;
+}
+
 static const struct vulkan_driver_funcs x11drv_vulkan_driver_funcs =
 {
     .p_vulkan_surface_create = X11DRV_vulkan_surface_create,
@@ -278,6 +283,7 @@ static const struct vulkan_driver_funcs x11drv_vulkan_driver_funcs =
     .p_vulkan_surface_detach = X11DRV_vulkan_surface_detach,
     .p_vulkan_surface_update = X11DRV_vulkan_surface_update,
     .p_vulkan_surface_presented = X11DRV_vulkan_surface_presented,
+    .p_vulkan_surface_enable_fshack = X11DRV_vulkan_surface_enable_fshack,
 
     .p_vkGetPhysicalDeviceWin32PresentationSupportKHR = X11DRV_vkGetPhysicalDeviceWin32PresentationSupportKHR,
     .p_get_host_surface_extension = X11DRV_get_host_surface_extension,
