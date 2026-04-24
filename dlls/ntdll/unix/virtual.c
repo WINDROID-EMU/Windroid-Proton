@@ -2600,12 +2600,15 @@ static NTSTATUS map_file_into_view( struct file_view *view, int fd, size_t start
             break;
         case EACCES:
         case EPERM:  /* noexec filesystem, fall back to read() */
-            if (flags & MAP_SHARED)
+            if (prot & PROT_EXEC)
             {
-                if (prot & PROT_EXEC) ERR( "failed to set PROT_EXEC on file map, noexec filesystem?\n" );
-                return STATUS_ACCESS_DENIED;
+                if (flags & MAP_SHARED)
+                    WARN( "failed to set PROT_EXEC on shared file map, noexec filesystem? falling back to read\n" );
+                else
+                    WARN( "failed to set PROT_EXEC on file map, noexec filesystem?\n" );
             }
-            if (prot & PROT_EXEC) WARN( "failed to set PROT_EXEC on file map, noexec filesystem?\n" );
+            else if (flags & MAP_SHARED)
+                return STATUS_ACCESS_DENIED;
             break;
         default:
             ERR( "mmap error %s, range %p-%p, unix_prot %#x\n",
