@@ -273,7 +273,7 @@ static const char *X11DRV_get_host_surface_extension(void)
 
 static BOOL X11DRV_vulkan_surface_enable_fshack( HWND hwnd, void *private )
 {
-    return FALSE;
+    return TRUE;
 }
 
 static const struct vulkan_driver_funcs x11drv_vulkan_driver_funcs =
