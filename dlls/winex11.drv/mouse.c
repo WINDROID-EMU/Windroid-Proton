@@ -495,17 +495,28 @@ static void map_event_coords( HWND hwnd, Window window, Window event_root, int x
     float ratio = get_fsr_ratio();
     POINT pt;
 
-    if (ratio > 1.0f && hwnd)
+    if (hwnd)
     {
         data = get_win_data( hwnd );
         if (data)
         {
             if (data->is_fsr_scaled)
             {
-                input->mi.dx = (LONG)(input->mi.dx / ratio);
-                input->mi.dy = (LONG)(input->mi.dy / ratio);
-                x_root = (int)(x_root / ratio);
-                y_root = (int)(y_root / ratio);
+                if (ratio <= 1.0f)
+                {
+                    RECT primary = get_host_primary_monitor_rect();
+                    int screen_w = primary.right - primary.left;
+                    int win_w = data->rects.visible.right - data->rects.visible.left;
+                    if (win_w > 0 && screen_w > win_w) ratio = (float)screen_w / (float)win_w;
+                }
+
+                if (ratio > 1.0f)
+                {
+                    input->mi.dx = (LONG)(input->mi.dx / ratio);
+                    input->mi.dy = (LONG)(input->mi.dy / ratio);
+                    x_root = (int)(x_root / ratio);
+                    y_root = (int)(y_root / ratio);
+                }
             }
             release_win_data( data );
         }

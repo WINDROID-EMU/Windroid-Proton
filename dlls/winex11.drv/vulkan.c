@@ -273,6 +273,12 @@ static const char *X11DRV_get_host_surface_extension(void)
 
 static BOOL X11DRV_vulkan_surface_enable_fshack( HWND hwnd, void *private )
 {
+    struct x11drv_win_data *data = get_win_data( hwnd );
+    if (data)
+    {
+        data->is_fsr_scaled = 1;
+        release_win_data( data );
+    }
     return TRUE;
 }
 
