@@ -815,8 +815,10 @@ NTSTATUS unwind_builtin_dll( void *args )
         return dwarf_virtual_unwind( context->Rip, &dispatch->EstablisherFrame, context, fde,
                                      &bases, &dispatch->LanguageHandler, &dispatch->HandlerData );
 #ifdef HAVE_LIBUNWIND
-    return libunwind_virtual_unwind( context->Rip, &dispatch->EstablisherFrame, context,
-                                     &dispatch->LanguageHandler, &dispatch->HandlerData );
+    /* Box64-mod workaround: Disable libunwind for mixed native-emulated exceptions. 
+     * libunwind will segfault if stack frame registers are omitted or invalid. */
+    // return libunwind_virtual_unwind( context->Rip, &dispatch->EstablisherFrame, context,
+    //                                  &dispatch->LanguageHandler, &dispatch->HandlerData );
 #endif
     return STATUS_UNSUCCESSFUL;
 }
