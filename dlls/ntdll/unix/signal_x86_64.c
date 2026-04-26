@@ -1530,7 +1530,15 @@ static void setup_raise_exception( ucontext_t *sigcontext, EXCEPTION_RECORD *rec
     CS_sig(sigcontext)  = cs64_sel;
     RIP_sig(sigcontext) = (ULONG_PTR)pKiUserExceptionDispatcher;
     RSP_sig(sigcontext) = (ULONG_PTR)stack;
-    RBP_sig(sigcontext) = 0; /* Clear RBP for the dispatcher to ensure clean unwinding */
+    RBP_sig(sigcontext) = 0;
+    R8_sig(sigcontext)  = 0;
+    R9_sig(sigcontext)  = 0;
+    R10_sig(sigcontext) = 0;
+    R11_sig(sigcontext) = 0;
+    R12_sig(sigcontext) = 0;
+    R13_sig(sigcontext) = 0;
+    R14_sig(sigcontext) = 0;
+    R15_sig(sigcontext) = 0;
     /* clear single-step, direction, and align check flag */
     EFL_sig(sigcontext) &= ~(0x100|0x400|0x40000);
     if ((callback = instrumentation_callback))
