@@ -1488,18 +1488,20 @@ static void setup_raise_exception( ucontext_t *sigcontext, EXCEPTION_RECORD *rec
 
     /* Box64 wow64 RBP fixup: Box64's ARM64 dynarec does not preserve RBP in
      * ucontext_t when delivering signals during 32-bit (wow64) execution.
-     * This causes save_context() to capture RBP=0, corrupting the frame-based
-     * SEH chain (EXCEPTION_REGISTRATION_RECORD relies on EBP to walk frames).
-     * When RBP is zero and we are in wow64 mode, recover EBP from the I386_CONTEXT
-     * saved in the WOW64 CPU area (TLS slot WOW64_TLS_CPURESERVED). */
-    if (context->Rbp == 0)
+     * This causes save_context() to capture RBP as garbage (often from host ARM64 FP),
+     * corrupting the frame-based SEH chain.
+     * In wow64 mode, recover EBP from the I386_CONTEXT saved in the WOW64 CPU area. */
+    if (is_wow64())
     {
         I386_CONTEXT *wow_context = get_cpu_area( IMAGE_FILE_MACHINE_I386 );
         if (wow_context && (wow_context->ContextFlags & CONTEXT_I386_CONTROL))
         {
-            TRACE_(seh)( "Box64 wow64: RBP=0 detected, recovering EBP=%08x from I386_CONTEXT\n",
-                         wow_context->Ebp );
-            context->Rbp = wow_context->Ebp;
+            if (context->Rbp == 0 || context->Rbp != wow_context->Ebp)
+            {
+                TRACE_(seh)( "Box64 wow64: RBP corruption detected (%llx != %x), recovering EBP from context\n",
+                             context->Rbp, wow_context->Ebp );
+                context->Rbp = wow_context->Ebp;
+            }
         }
     }
 
@@ -1528,6 +1530,7 @@ static void setup_raise_exception( ucontext_t *sigcontext, EXCEPTION_RECORD *rec
     CS_sig(sigcontext)  = cs64_sel;
     RIP_sig(sigcontext) = (ULONG_PTR)pKiUserExceptionDispatcher;
     RSP_sig(sigcontext) = (ULONG_PTR)stack;
+    RBP_sig(sigcontext) = 0; /* Clear RBP for the dispatcher to ensure clean unwinding */
     /* clear single-step, direction, and align check flag */
     EFL_sig(sigcontext) &= ~(0x100|0x400|0x40000);
     if ((callback = instrumentation_callback))
