@@ -2000,7 +2000,7 @@ static void install_bpf(struct sigaction *sig_act)
     };
     static const unsigned int flags = SECCOMP_FILTER_FLAG_SPEC_ALLOW;
 
-#define NATIVE_SYSCALL_ADDRESS_START 0x700000000000
+#define NATIVE_SYSCALL_ADDRESS_START 0x100000000LL
 
     static struct sock_filter filter[] =
     {
