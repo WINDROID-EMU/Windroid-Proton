@@ -2712,7 +2712,7 @@ static void _SHCreateSymbolicLink(int nFolder, const WCHAR *path)
             create_link( path, "/storage/emulated/0/Documents" );
             break;
         case CSIDL_DESKTOPDIRECTORY:
-			create_link( path, "/storage/emulated/0/MiceWine" );
+			create_link( path, "/storage/emulated/0/Windroid" );
             break;
         case CSIDL_MYPICTURES:
             create_link( path, "/storage/emulated/0/Pictures" );
@@ -2922,7 +2922,7 @@ HRESULT WINAPI SHGetFolderPathAndSubDirW(
 
 #ifdef __ANDROID__
     /* create symbolic links rather than directories for specific
-     * user shell folders for MiceWine */
+     * user shell folders for Windroid */
     _SHCreateSymbolicLink(folder, szBuildPath);
 #endif
 

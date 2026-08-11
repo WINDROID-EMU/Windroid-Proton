@@ -33,24 +33,24 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(dinput);
 
-DEFINE_GUID( micewine_joystick_guid, 0xdeadbeef, 0x7734, 0x11d2, 0x8d, 0x4a, 0x23, 0x90, 0x3f, 0xb6, 0xbd, 0xf7 );
+DEFINE_GUID( windroid_joystick_guid, 0xdeadbeef, 0x7734, 0x11d2, 0x8d, 0x4a, 0x23, 0x90, 0x3f, 0xb6, 0xbd, 0xf7 );
 DEFINE_GUID (GUID_DEVINTERFACE_HID, 0x4D1E55B2L, 0xF16F, 0x11CF, 0x88, 0xCB, 0x00, 0x11, 0x11, 0x00, 0x00, 0x30);
 
-struct micewine_joystick
+struct windroid_joystick
 {
 	struct dinput_device base;
 	WCHAR device_path[MAX_PATH];
     int xinput_index;
 };
 
-static struct micewine_joystick *connected_devices[XUSER_MAX_COUNT];
+static struct windroid_joystick *connected_devices[XUSER_MAX_COUNT];
 
-static inline struct micewine_joystick *impl_from_IDirectInputDevice8W( IDirectInputDevice8W *iface )
+static inline struct windroid_joystick *impl_from_IDirectInputDevice8W( IDirectInputDevice8W *iface )
 {
-    return CONTAINING_RECORD( CONTAINING_RECORD( iface, struct dinput_device, IDirectInputDevice8W_iface ), struct micewine_joystick, base );
+    return CONTAINING_RECORD( CONTAINING_RECORD( iface, struct dinput_device, IDirectInputDevice8W_iface ), struct windroid_joystick, base );
 }
 
-static inline BOOL is_exclusively_acquired( struct micewine_joystick *joystick )
+static inline BOOL is_exclusively_acquired( struct windroid_joystick *joystick )
 {
     return joystick->base.status == STATUS_ACQUIRED && (joystick->base.dwCoopLevel & DISCL_EXCLUSIVE);
 }
@@ -78,33 +78,33 @@ static int xinput_mask_map[] = {
     XINPUT_GAMEPAD_RIGHT_THUMB,
 };
 
-static void micewine_joystick_destroy( IDirectInputDevice8W *iface )
+static void windroid_joystick_destroy( IDirectInputDevice8W *iface )
 {
-    struct micewine_joystick *impl = impl_from_IDirectInputDevice8W( iface );
+    struct windroid_joystick *impl = impl_from_IDirectInputDevice8W( iface );
     TRACE( "iface %p.\n", iface );
     CloseHandle( impl->base.read_event );
 }
 
-static HRESULT micewine_joystick_acquire( IDirectInputDevice8W *iface )
+static HRESULT windroid_joystick_acquire( IDirectInputDevice8W *iface )
 {
-    struct micewine_joystick *impl = impl_from_IDirectInputDevice8W( iface );
+    struct windroid_joystick *impl = impl_from_IDirectInputDevice8W( iface );
     memcpy(&impl->base.device_format, &impl->base.user_format, sizeof(DIDATAFORMAT));
     IDirectInputDevice8_SendForceFeedbackCommand( iface, DISFFC_RESET );
     return DI_OK;
 }
 
-static HRESULT micewine_joystick_unacquire( IDirectInputDevice8W *iface )
+static HRESULT windroid_joystick_unacquire( IDirectInputDevice8W *iface )
 {
-    struct micewine_joystick *impl = impl_from_IDirectInputDevice8W( iface );
+    struct windroid_joystick *impl = impl_from_IDirectInputDevice8W( iface );
     if (!(impl->base.caps.dwFlags & DIDC_FORCEFEEDBACK)) return DI_OK;
     if (!is_exclusively_acquired( impl )) return DI_OK;
     IDirectInputDevice8_SendForceFeedbackCommand( iface, DISFFC_RESET );
     return DI_OK;
 }
 
-static HRESULT micewine_joystick_read( IDirectInputDevice8W *iface )
+static HRESULT windroid_joystick_read( IDirectInputDevice8W *iface )
 {
-    struct micewine_joystick *impl = impl_from_IDirectInputDevice8W(iface);
+    struct windroid_joystick *impl = impl_from_IDirectInputDevice8W(iface);
     struct dinput_device *dinput = &impl->base;
     XINPUT_STATE state;
     DWORD ret;
@@ -188,10 +188,10 @@ static HRESULT micewine_joystick_read( IDirectInputDevice8W *iface )
     return DI_OK;
 }
 
-static HRESULT micewine_joystick_get_property( IDirectInputDevice8W *iface, DWORD property,
+static HRESULT windroid_joystick_get_property( IDirectInputDevice8W *iface, DWORD property,
                                           DIPROPHEADER *header, const DIDEVICEOBJECTINSTANCEW *instance )
 {
-    struct micewine_joystick *impl = impl_from_IDirectInputDevice8W( iface );
+    struct windroid_joystick *impl = impl_from_IDirectInputDevice8W( iface );
 
     switch (property)
     {
@@ -239,7 +239,7 @@ static HRESULT micewine_joystick_get_property( IDirectInputDevice8W *iface, DWOR
     return DIERR_UNSUPPORTED;
 }
 
-static BOOL enum_objects(struct micewine_joystick *impl, const DIPROPHEADER *filter, DWORD flags,
+static BOOL enum_objects(struct windroid_joystick *impl, const DIPROPHEADER *filter, DWORD flags,
                          enum_object_callback callback, void *data)
 {
     static const struct {
@@ -331,22 +331,22 @@ static BOOL enum_objects(struct micewine_joystick *impl, const DIPROPHEADER *fil
     return DIENUM_STOP;
 }
 
-static HRESULT micewine_joystick_enum_objects( IDirectInputDevice8W *iface, const DIPROPHEADER *filter,
+static HRESULT windroid_joystick_enum_objects( IDirectInputDevice8W *iface, const DIPROPHEADER *filter,
                                           DWORD flags, enum_object_callback callback, void *context )
 {
-    struct micewine_joystick *impl = impl_from_IDirectInputDevice8W( iface );
+    struct windroid_joystick *impl = impl_from_IDirectInputDevice8W( iface );
     return enum_objects(impl, filter, flags, callback, context );
 }
 
-static const struct dinput_device_vtbl micewine_joystick_vtbl =
+static const struct dinput_device_vtbl windroid_joystick_vtbl =
 {
-    micewine_joystick_destroy,
+    windroid_joystick_destroy,
     NULL,
-    micewine_joystick_read,
-    micewine_joystick_acquire,
-    micewine_joystick_unacquire,
-    micewine_joystick_enum_objects,
-    micewine_joystick_get_property,
+    windroid_joystick_read,
+    windroid_joystick_acquire,
+    windroid_joystick_unacquire,
+    windroid_joystick_enum_objects,
+    windroid_joystick_get_property,
     NULL,
     NULL,
     NULL,
@@ -395,7 +395,7 @@ static void start_update_thread(void)
     InitOnceExecuteOnce(&init_once, start_update_thread_once, NULL, NULL);
 }
 
-HRESULT micewine_joystick_enum_device( DWORD type, DWORD flags, DIDEVICEINSTANCEW *instance, DWORD version, int index )
+HRESULT windroid_joystick_enum_device( DWORD type, DWORD flags, DIDEVICEINSTANCEW *instance, DWORD version, int index )
 {
 	XINPUT_STATE state;
 	DWORD ret;    
@@ -417,8 +417,8 @@ HRESULT micewine_joystick_enum_device( DWORD type, DWORD flags, DIDEVICEINSTANCE
     instance->wUsagePage = 0x01;
     instance->wUsage = 0x05;
 
-    swprintf(instance->tszInstanceName, MAX_PATH, L"MiceWine Virtual Controller %i", index);
-    wcscpy(instance->tszProductName,  L"MiceWine Product");
+    swprintf(instance->tszInstanceName, MAX_PATH, L"Windroid Virtual Controller %i", index);
+    wcscpy(instance->tszProductName,  L"Windroid Product");
 
 	return DI_OK;
 }
@@ -438,9 +438,9 @@ static int get_controllers_count(void)
     return count;
 }
 
-HRESULT micewine_joystick_create_device(struct dinput *dinput, const GUID *guid, IDirectInputDevice8W **out)
+HRESULT windroid_joystick_create_device(struct dinput *dinput, const GUID *guid, IDirectInputDevice8W **out)
 {
-    struct micewine_joystick *impl;
+    struct windroid_joystick *impl;
     static int index = 0;
 
     TRACE( "dinput %p, guid %s, out %p\n", dinput, debugstr_guid( guid ), out );
@@ -450,15 +450,15 @@ HRESULT micewine_joystick_create_device(struct dinput *dinput, const GUID *guid,
     if (!(impl = calloc(1, sizeof(*impl))))
         return E_OUTOFMEMORY;
 
-    dinput_device_init(&impl->base, &micewine_joystick_vtbl, guid, dinput);
-    impl->base.crit.DebugInfo->Spare[0] = (DWORD_PTR)(__FILE__ ": micewine_joystick.base.crit");
+    dinput_device_init(&impl->base, &windroid_joystick_vtbl, guid, dinput);
+    impl->base.crit.DebugInfo->Spare[0] = (DWORD_PTR)(__FILE__ ": windroid_joystick.base.crit");
     impl->base.dwCoopLevel = DISCL_NONEXCLUSIVE | DISCL_BACKGROUND;
     impl->base.read_event = CreateEventW(NULL, FALSE, FALSE, NULL);
 
     if (index >= get_controllers_count()) index = 0;
 
-    swprintf(impl->base.instance.tszInstanceName, MAX_PATH, L"MiceWine Virtual Controller %i", index);
-    wcscpy(impl->base.instance.tszProductName,  L"MiceWine Product");
+    swprintf(impl->base.instance.tszInstanceName, MAX_PATH, L"Windroid Virtual Controller %i", index);
+    wcscpy(impl->base.instance.tszProductName,  L"Windroid Product");
     swprintf(impl->device_path, MAX_PATH, L"\\\\?\\hid#vid_2563&pid_0575&ig_0%i#273&03006316632500007505000011010000.0&0&0&1#{4d1e55b2-f16f-11cf-88cb-001111000030}", index);
 
     impl->xinput_index = index;
